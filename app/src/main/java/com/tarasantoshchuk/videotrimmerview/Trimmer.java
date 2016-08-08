@@ -5,41 +5,37 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.media.MediaMetadataRetriever;
+import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
-import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
-import java.io.IOException;
-
-public class Trimmer extends FrameLayout {
+public class Trimmer extends LinearLayout {
     private static final int RECT_MARGIN_DP = 25;
-    private static final int CIRCLE_RADIUS_DP = 15;
+    private static final int CIRCLE_RADIUS_DP = 30;
     private static final int BORDER_WIDTH_DP = 5;
 
     private float mLeftRectPosition;
     private float mRightRectPosition;
 
-    private float mLeftRectTranslation = 0;
-    private float mRightRectTranslation = 0;
-
     private float mMinLeftRectPosition;
     private float mMaxRightRectPosition;
-
-    private float mVerticalPadding;
+    private float mMinRectWidth;
 
     private float mCircleRadius;
     private float mBorderWidth;
 
-    private final Paint mRectPaint = new Paint();
-    private final Paint mCirclePaint = new Paint();
+    private final Paint mFramePaint = new Paint();
+    private final Paint mControllersPaint = new Paint();
 
     private final RectF mBorderRectangle = new RectF();
 
     GestureDetector mDetector;
     MediaMetadataRetriever mMetadataRetriever = new MediaMetadataRetriever();
+    private GestureTarget mGestureTarget;
 
     public Trimmer(Context context) {
         this(context, null);
@@ -59,16 +55,15 @@ public class Trimmer extends FrameLayout {
 
         initDimens(context);
         initPaints();
-        inflate(context, R.layout.trimmer, this);
+        //inflate(context, R.layout.trimmer, this);
         initGestureDetector(context);
 
-        mMetadataRetriever.setDataSource(context.getResources().openRawResourceFd(R.raw.video).getFileDescriptor());
+        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
     }
 
     private void initDimens(Context context) {
         DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
         mMinLeftRectPosition = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, RECT_MARGIN_DP, displayMetrics);
-        mVerticalPadding = mMinLeftRectPosition;
         mBorderWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, BORDER_WIDTH_DP, displayMetrics);
         mCircleRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, CIRCLE_RADIUS_DP, displayMetrics);
     }
@@ -92,14 +87,23 @@ public class Trimmer extends FrameLayout {
 
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-                if (Math.abs(e1.getY() - (getBottom() + getTop()) / 2) < mCircleRadius &&
-                        Math.abs(e1.getX() - mLeftRectPosition) < mCircleRadius) {
-                    mLeftRectTranslation -= distanceX;
-                    invalidate();
-                    return true;
+                switch(mGestureTarget == null ? setAndReturnGestureTarget(e1.getX(), e1.getY()) : mGestureTarget) {
+                    case LEFT_CONTROL:
+                        moveLeftControl(distanceX);
+                        break;
+                    case RIGHT_CONTROL:
+                        moveRightControl(distanceX);
+                        break;
+                    case FRAME:
+                        moveFrame(distanceX);
+                        break;
+                    case NONE:
+                    default:
+                        return false;
                 }
 
-                return false;
+                invalidate();
+                return true;
             }
 
             @Override
@@ -114,33 +118,96 @@ public class Trimmer extends FrameLayout {
         });
     }
 
+    private void moveRightControl(float distanceX) {
+
+    }
+
+    private void moveFrame(float distanceX) {
+
+    }
+
+    private void moveLeftControl(float distanceX) {
+        float newPosition = mLeftRectPosition - distanceX;
+
+        float limitedPosition = limit(mMinLeftRectPosition, mRightRectPosition, newPosition);
+
+        if (newPosition != limitedPosition) {
+
+        }
+    }
+
+    private enum GestureTarget {
+        LEFT_CONTROL,
+        RIGHT_CONTROL,
+        FRAME,
+        NONE
+    }
+
+    private GestureTarget setAndReturnGestureTarget(float x, float y) {
+        mGestureTarget = getGestureTarget(x, y);
+        return mGestureTarget;
+    }
+
+    @NonNull
+    private GestureTarget getGestureTarget(float x, float y) {
+        if (x < mLeftRectPosition - mCircleRadius || x > mRightRectPosition + mCircleRadius) {
+            return GestureTarget.NONE;
+        }
+
+        if (x > mLeftRectPosition + mCircleRadius && x < mRightRectPosition - mCircleRadius) {
+            return GestureTarget.FRAME;
+        }
+
+        if (Math.abs(y - getCircleY()) < mCircleRadius) {
+            if (x < mLeftRectPosition + mCircleRadius) {
+                return GestureTarget.LEFT_CONTROL;
+            } else {
+                return GestureTarget.RIGHT_CONTROL;
+            }
+        }
+
+        return GestureTarget.NONE;
+    }
+
     private void initPaints() {
         int color = getContext().getResources().getColor(android.R.color.holo_red_light);
-        mRectPaint.setColor(color);
-        mRectPaint.setStrokeWidth(mBorderWidth);
-        mRectPaint.setStyle(Paint.Style.STROKE);
+        mFramePaint.setColor(color);
+        mFramePaint.setStrokeWidth(mBorderWidth);
+        mFramePaint.setStyle(Paint.Style.STROKE);
 
-        mCirclePaint.setColor(color);
-        mCirclePaint.setStrokeWidth(mBorderWidth);
-        mCirclePaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        mControllersPaint.setColor(color);
+        mControllersPaint.setStrokeWidth(mBorderWidth);
+        mControllersPaint.setStyle(Paint.Style.FILL_AND_STROKE);
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        mBorderRectangle.set(getCurrentLeft(), getTop() + mVerticalPadding, getCurrentRight(), getBottom() - mVerticalPadding);
-        canvas.drawRect(mBorderRectangle, mRectPaint);
-        canvas.drawCircle(getCurrentLeft(), (getTop() + getBottom()) / 2f, mCircleRadius, mRectPaint);
-        canvas.drawCircle(getCurrentRight(), (getTop() + getBottom()) / 2f, mCircleRadius, mRectPaint);
-        canvas.drawBitmap(mMetadataRetriever.getFrameAtTime(), 0, 0, null);
+        mBorderRectangle.set(getCurrentLeft(), getTop(), getCurrentRight(), getBottom());
+        //canvas.drawBitmap(mMetadataRetriever.getFrameAtTime(), 0, 0, null);
+        canvas.drawRect(mBorderRectangle, mFramePaint);
+        canvas.drawCircle(getLeftCircleX(), getCircleY(), mCircleRadius, mControllersPaint);
+        canvas.drawCircle(getRightCircleX(), getCircleY(), mCircleRadius, mControllersPaint);
+    }
+
+    private float getRightCircleX() {
+        return getCurrentRight();
+    }
+
+    private float getLeftCircleX() {
+        return getCurrentLeft();
+    }
+
+    private float getCircleY() {
+        return (getTop() + getBottom()) / 2f;
     }
 
     private float getCurrentLeft() {
-        return limit(mMinLeftRectPosition, mRightRectPosition, mLeftRectPosition + mLeftRectTranslation);
+        return limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition);
     }
 
     private float getCurrentRight() {
-        return limit(mLeftRectPosition, mMaxRightRectPosition, mRightRectPosition + mRightRectTranslation);
+        return limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition);
     }
 
     @Override
@@ -161,15 +228,9 @@ public class Trimmer extends FrameLayout {
 
     private void onUp(MotionEvent event) {
         mLeftRectPosition = getCurrentLeft();
-        mLeftRectTranslation = 0;
-
         mRightRectPosition = getCurrentRight();
-        mRightRectTranslation = 0;
-    }
 
-    @Override
-    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        mGestureTarget = null;
     }
 
     @Override
@@ -178,13 +239,30 @@ public class Trimmer extends FrameLayout {
         mMaxRightRectPosition = getRight() - mMinLeftRectPosition;
         mLeftRectPosition = mMinLeftRectPosition;
         mRightRectPosition = mMaxRightRectPosition;
+        mMinRectWidth = mMinLeftRectPosition;
     }
 
-    private static final float limit(float min, float max, float value) {
+    private static float limit(float min, float max, float value) {
         if (value < min) {
             return min;
         } else if (value > max) {
             return max;
+        } else {
+            return value;
+        }
+    }
+
+    private static float limitCeil(float max, float value) {
+        if (value < max) {
+            return value;
+        } else {
+            return max;
+        }
+    }
+
+    private static float limitFloor(float min, float value) {
+        if (value > min) {
+            return min;
         } else {
             return value;
         }
