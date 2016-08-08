@@ -11,6 +11,7 @@ import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 
 public class Trimmer extends LinearLayout {
@@ -50,6 +51,8 @@ public class Trimmer extends LinearLayout {
         init(context);
     }
 
+
+
     private void init(Context context) {
         setWillNotDraw(false);
 
@@ -58,7 +61,11 @@ public class Trimmer extends LinearLayout {
         //inflate(context, R.layout.trimmer, this);
         initGestureDetector(context);
 
-        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
+//        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
+//        int duration = Integer.parseInt(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
+//        ((ImageView) findViewById(R.id.image1)).setImageBitmap(mMetadataRetriever.getFrameAtTime(0));
+//        ((ImageView) findViewById(R.id.image2)).setImageBitmap(mMetadataRetriever.getFrameAtTime(duration / 2));
+//        ((ImageView) findViewById(R.id.image3)).setImageBitmap(mMetadataRetriever.getFrameAtTime(duration));
     }
 
     private void initDimens(Context context) {
@@ -119,21 +126,23 @@ public class Trimmer extends LinearLayout {
     }
 
     private void moveRightControl(float distanceX) {
-
+        mRightRectPosition = limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition - distanceX);
     }
 
     private void moveFrame(float distanceX) {
+        float newLeftPosition = limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition - distanceX);
+        float newRightPosition = limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition - distanceX);
 
+        int dxSign = distanceX > 0 ? 1 : -1;
+
+        float allowedDx = Math.min(Math.abs(newLeftPosition - mLeftRectPosition), Math.abs(newRightPosition - mRightRectPosition)) * dxSign;
+
+        mRightRectPosition -= allowedDx;
+        mLeftRectPosition -= allowedDx;
     }
 
     private void moveLeftControl(float distanceX) {
-        float newPosition = mLeftRectPosition - distanceX;
-
-        float limitedPosition = limit(mMinLeftRectPosition, mRightRectPosition, newPosition);
-
-        if (newPosition != limitedPosition) {
-
-        }
+        mLeftRectPosition = limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition - distanceX);
     }
 
     private enum GestureTarget {
@@ -203,11 +212,11 @@ public class Trimmer extends LinearLayout {
     }
 
     private float getCurrentLeft() {
-        return limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition);
+        return mLeftRectPosition;
     }
 
     private float getCurrentRight() {
-        return limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition);
+        return mRightRectPosition;
     }
 
     @Override
@@ -247,22 +256,6 @@ public class Trimmer extends LinearLayout {
             return min;
         } else if (value > max) {
             return max;
-        } else {
-            return value;
-        }
-    }
-
-    private static float limitCeil(float max, float value) {
-        if (value < max) {
-            return value;
-        } else {
-            return max;
-        }
-    }
-
-    private static float limitFloor(float min, float value) {
-        if (value > min) {
-            return min;
         } else {
             return value;
         }
