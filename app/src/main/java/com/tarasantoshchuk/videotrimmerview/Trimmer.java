@@ -6,8 +6,13 @@ import android.media.MediaMetadataRetriever;
 import android.util.AttributeSet;
 import android.widget.LinearLayout;
 
-public class Trimmer extends LinearLayout implements TrimmerControls.Callback, PlayerListener, TrimmerControls.Listener, Callback {
-    private static final int FRAMES_COUNT = 3;
+import rx.Observable;
+import rx.Subscriber;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.schedulers.Schedulers;
+
+public class Trimmer extends LinearLayout implements TrimmerControls.Callback, PlayerListener, TrimmerControls.Listener, ZoomableLayout.Callback {
+    private static final int FRAMES_COUNT = 5;
     private static final int LONG_CLICK_EXPANTION = 3;
 
     private static final int MIN_TRIMMED_LENGTH_MS = 1000;
@@ -44,7 +49,7 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
         mTrimmerControls = (TrimmerControls) findViewById(R.id.controls);
         mTrimmerControls.setCallback(this);
         mTrimmerControls.setTrimListener(this);
-        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
+        mMetadataRetriever.setDataSource("/storage/emulated/0/video.avi");
 
         float videoHeight = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
         float videoWidth = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
@@ -52,7 +57,6 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
         mVideoAspectRatio = videoWidth / videoHeight;
 
         mVideoDurationMs = Integer.parseInt(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
-        long durationMcs = (long) (mVideoDurationMs * 1000f);
     }
 
     @Override
@@ -75,12 +79,12 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
 
     @Override
     public float minTrimWidth() {
-        return MIN_TRIMMED_LENGTH_MS / mVideoDurationMs * getWidth();
+        return secondToPixelPosition(MIN_TRIMMED_LENGTH_MS);
     }
 
     @Override
     public float maxTrimWidth() {
-        return MAX_TRIMMED_LENGTH_MS / mVideoDurationMs * getWidth();
+        return secondToPixelPosition(MAX_TRIMMED_LENGTH_MS);
     }
 
     @Override
@@ -117,8 +121,23 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
     }
 
     @Override
-    public Bitmap getBitmapAt(float pixelPosition) {
-        return mMetadataRetriever.getFrameAtTime((long) (1000 * pixelToSecondPosition(pixelPosition)));
+    public Observable<Bitmap> getBitmapAt(final float pixelPosition) {
+        return new BitmapObservable(pixelPosition)
+                .subscribeOn(Schedulers.newThread())
+                .observeOn(AndroidSchedulers.mainThread());
+    }
+
+    private class BitmapObservable extends Observable<Bitmap> {
+        public BitmapObservable(final float pixelPosition) {
+            super(new Observable.OnSubscribe<Bitmap>() {
+                @Override
+                public void call(Subscriber<? super Bitmap> subscriber) {
+                    Bitmap result = mMetadataRetriever.getFrameAtTime((long) (1000 * pixelToSecondPosition(pixelPosition)));
+                    subscriber.onNext(result);
+                    subscriber.onCompleted();
+                }
+            });
+        }
     }
 
     public interface OnTrimChangedListener {
