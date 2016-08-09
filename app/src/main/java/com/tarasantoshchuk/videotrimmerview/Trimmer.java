@@ -1,42 +1,27 @@
 package com.tarasantoshchuk.videotrimmerview;
 
 import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.RectF;
+import android.graphics.Bitmap;
 import android.media.MediaMetadataRetriever;
-import android.support.annotation.NonNull;
 import android.util.AttributeSet;
-import android.util.DisplayMetrics;
-import android.util.TypedValue;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 
-public class Trimmer extends LinearLayout {
-    private static final int RECT_MARGIN_DP = 25;
-    private static final int CIRCLE_RADIUS_DP = 30;
-    private static final int BORDER_WIDTH_DP = 5;
+public class Trimmer extends LinearLayout implements TrimmerControls.Callback, PlayerListener, TrimmerControls.Listener, Callback {
+    private static final int FRAMES_COUNT = 3;
+    private static final int LONG_CLICK_EXPANTION = 3;
 
-    private float mLeftRectPosition;
-    private float mRightRectPosition;
+    private static final int MIN_TRIMMED_LENGTH_MS = 1000;
+    private static final int MAX_TRIMMED_LENGTH_MS = 15000;
 
-    private float mMinLeftRectPosition;
-    private float mMaxRightRectPosition;
-    private float mMinRectWidth;
+    private MediaMetadataRetriever mMetadataRetriever = new MediaMetadataRetriever();
 
-    private float mCircleRadius;
-    private float mBorderWidth;
+    private OnTrimChangedListener mListener;
 
-    private final Paint mFramePaint = new Paint();
-    private final Paint mControllersPaint = new Paint();
+    private TrimmerControls mTrimmerControls;
 
-    private final RectF mBorderRectangle = new RectF();
-
-    GestureDetector mDetector;
-    MediaMetadataRetriever mMetadataRetriever = new MediaMetadataRetriever();
-    private GestureTarget mGestureTarget;
+    private float mVideoDurationMs;
+    private float mVideoAspectRatio;
+    private ZoomableLayout mZoomableLayout;
 
     public Trimmer(Context context) {
         this(context, null);
@@ -51,213 +36,100 @@ public class Trimmer extends LinearLayout {
         init(context);
     }
 
-
-
     private void init(Context context) {
-        setWillNotDraw(false);
+        inflate(context, R.layout.trimmer, this);
+        mZoomableLayout = (ZoomableLayout) findViewById(R.id.frames);
+        mZoomableLayout.setCallback(this);
 
-        initDimens(context);
-        initPaints();
-        //inflate(context, R.layout.trimmer, this);
-        initGestureDetector(context);
+        mTrimmerControls = (TrimmerControls) findViewById(R.id.controls);
+        mTrimmerControls.setCallback(this);
+        mTrimmerControls.setTrimListener(this);
+        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
 
-//        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
-//        int duration = Integer.parseInt(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
-//        ((ImageView) findViewById(R.id.image1)).setImageBitmap(mMetadataRetriever.getFrameAtTime(0));
-//        ((ImageView) findViewById(R.id.image2)).setImageBitmap(mMetadataRetriever.getFrameAtTime(duration / 2));
-//        ((ImageView) findViewById(R.id.image3)).setImageBitmap(mMetadataRetriever.getFrameAtTime(duration));
-    }
+        float videoHeight = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+        float videoWidth = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
 
-    private void initDimens(Context context) {
-        DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
-        mMinLeftRectPosition = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, RECT_MARGIN_DP, displayMetrics);
-        mBorderWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, BORDER_WIDTH_DP, displayMetrics);
-        mCircleRadius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, CIRCLE_RADIUS_DP, displayMetrics);
-    }
+        mVideoAspectRatio = videoWidth / videoHeight;
 
-    private void initGestureDetector(Context context) {
-        mDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onDown(MotionEvent e) {
-                return true;
-            }
-
-            @Override
-            public void onShowPress(MotionEvent e) {
-
-            }
-
-            @Override
-            public boolean onSingleTapUp(MotionEvent e) {
-                return false;
-            }
-
-            @Override
-            public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-                switch(mGestureTarget == null ? setAndReturnGestureTarget(e1.getX(), e1.getY()) : mGestureTarget) {
-                    case LEFT_CONTROL:
-                        moveLeftControl(distanceX);
-                        break;
-                    case RIGHT_CONTROL:
-                        moveRightControl(distanceX);
-                        break;
-                    case FRAME:
-                        moveFrame(distanceX);
-                        break;
-                    case NONE:
-                    default:
-                        return false;
-                }
-
-                invalidate();
-                return true;
-            }
-
-            @Override
-            public void onLongPress(MotionEvent e) {
-
-            }
-
-            @Override
-            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                return false;
-            }
-        });
-    }
-
-    private void moveRightControl(float distanceX) {
-        mRightRectPosition = limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition - distanceX);
-    }
-
-    private void moveFrame(float distanceX) {
-        float newLeftPosition = limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition - distanceX);
-        float newRightPosition = limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition - distanceX);
-
-        int dxSign = distanceX > 0 ? 1 : -1;
-
-        float allowedDx = Math.min(Math.abs(newLeftPosition - mLeftRectPosition), Math.abs(newRightPosition - mRightRectPosition)) * dxSign;
-
-        mRightRectPosition -= allowedDx;
-        mLeftRectPosition -= allowedDx;
-    }
-
-    private void moveLeftControl(float distanceX) {
-        mLeftRectPosition = limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition - distanceX);
-    }
-
-    private enum GestureTarget {
-        LEFT_CONTROL,
-        RIGHT_CONTROL,
-        FRAME,
-        NONE
-    }
-
-    private GestureTarget setAndReturnGestureTarget(float x, float y) {
-        mGestureTarget = getGestureTarget(x, y);
-        return mGestureTarget;
-    }
-
-    @NonNull
-    private GestureTarget getGestureTarget(float x, float y) {
-        if (x < mLeftRectPosition - mCircleRadius || x > mRightRectPosition + mCircleRadius) {
-            return GestureTarget.NONE;
-        }
-
-        if (x > mLeftRectPosition + mCircleRadius && x < mRightRectPosition - mCircleRadius) {
-            return GestureTarget.FRAME;
-        }
-
-        if (Math.abs(y - getCircleY()) < mCircleRadius) {
-            if (x < mLeftRectPosition + mCircleRadius) {
-                return GestureTarget.LEFT_CONTROL;
-            } else {
-                return GestureTarget.RIGHT_CONTROL;
-            }
-        }
-
-        return GestureTarget.NONE;
-    }
-
-    private void initPaints() {
-        int color = getContext().getResources().getColor(android.R.color.holo_red_light);
-        mFramePaint.setColor(color);
-        mFramePaint.setStrokeWidth(mBorderWidth);
-        mFramePaint.setStyle(Paint.Style.STROKE);
-
-        mControllersPaint.setColor(color);
-        mControllersPaint.setStrokeWidth(mBorderWidth);
-        mControllersPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        mVideoDurationMs = Integer.parseInt(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
+        long durationMcs = (long) (mVideoDurationMs * 1000f);
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
-        mBorderRectangle.set(getCurrentLeft(), getTop(), getCurrentRight(), getBottom());
-        //canvas.drawBitmap(mMetadataRetriever.getFrameAtTime(), 0, 0, null);
-        canvas.drawRect(mBorderRectangle, mFramePaint);
-        canvas.drawCircle(getLeftCircleX(), getCircleY(), mCircleRadius, mControllersPaint);
-        canvas.drawCircle(getRightCircleX(), getCircleY(), mCircleRadius, mControllersPaint);
-    }
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        int widthMode = MeasureSpec.getMode(widthMeasureSpec);
 
-    private float getRightCircleX() {
-        return getCurrentRight();
-    }
-
-    private float getLeftCircleX() {
-        return getCurrentLeft();
-    }
-
-    private float getCircleY() {
-        return (getTop() + getBottom()) / 2f;
-    }
-
-    private float getCurrentLeft() {
-        return mLeftRectPosition;
-    }
-
-    private float getCurrentRight() {
-        return mRightRectPosition;
-    }
-
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent ev) {
-        return true;
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        super.onTouchEvent(event);
-        boolean result =  mDetector.onTouchEvent(event);
-        if(event.getAction() == MotionEvent.ACTION_UP) {
-            onUp(event);
+        if (widthMode == MeasureSpec.UNSPECIFIED) {
+            throw new RuntimeException("does not support this width mode");
         }
 
-        return result;
+        int widthSize = MeasureSpec.getSize(widthMeasureSpec);
+        int heightSize = (int) (widthSize / mVideoAspectRatio / (float) FRAMES_COUNT);
+
+        super.onMeasure(MeasureSpec.makeMeasureSpec(widthSize, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(heightSize, MeasureSpec.EXACTLY));
     }
 
-    private void onUp(MotionEvent event) {
-        mLeftRectPosition = getCurrentLeft();
-        mRightRectPosition = getCurrentRight();
-
-        mGestureTarget = null;
+    public void setOnTrimChangedListener(OnTrimChangedListener listener) {
+        mListener = listener;
     }
 
     @Override
-    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-        super.onLayout(changed, left, top, right, bottom);
-        mMaxRightRectPosition = getRight() - mMinLeftRectPosition;
-        mLeftRectPosition = mMinLeftRectPosition;
-        mRightRectPosition = mMaxRightRectPosition;
-        mMinRectWidth = mMinLeftRectPosition;
+    public float minTrimWidth() {
+        return MIN_TRIMMED_LENGTH_MS / mVideoDurationMs * getWidth();
     }
 
-    private static float limit(float min, float max, float value) {
-        if (value < min) {
-            return min;
-        } else if (value > max) {
-            return max;
-        } else {
-            return value;
-        }
+    @Override
+    public float maxTrimWidth() {
+        return MAX_TRIMMED_LENGTH_MS / mVideoDurationMs * getWidth();
+    }
+
+    @Override
+    public void onPause() {
+        mTrimmerControls.hideVideoPositionIndicator();
+    }
+
+    @Override
+    public void onPositionChange(float currentPosition) {
+        mTrimmerControls.updateVideoPositionIndicator(currentPosition / mVideoDurationMs * getWidth());
+    }
+
+    @Override
+    public void onTrimPositionChanged(float left, float right) {
+        mListener.onTrimChanged(left / getWidth() * mVideoDurationMs, right / getWidth() * mVideoDurationMs);
+
+        //todo: remove
+        mTrimmerControls.updateVideoPositionIndicator((left + right) / 2f);
+    }
+
+    @Override
+    public void onLongClick(float pivotX) {
+        float pivotSecond = pixelToSecondPosition(pivotX);
+
+        float zoomedStartPosition = pivotSecond - pivotSecond / LONG_CLICK_EXPANTION;
+        float zoomedEndPosition = pivotSecond + (mVideoDurationMs - pivotSecond) / LONG_CLICK_EXPANTION;
+
+        mZoomableLayout.animateViews();
+    }
+
+    @Override
+    public void onLongClickRelease() {
+        mZoomableLayout.revertAnimation();
+    }
+
+    @Override
+    public Bitmap getBitmapAt(float pixelPosition) {
+        return mMetadataRetriever.getFrameAtTime((long) (1000 * pixelToSecondPosition(pixelPosition)));
+    }
+
+    public interface OnTrimChangedListener {
+        void onTrimChanged(float startTime, float endTime);
+    }
+
+    private float pixelToSecondPosition(float pixelPosition) {
+        return pixelPosition / getWidth() * mVideoDurationMs;
+    }
+
+    private float secondToPixelPosition(float secondPosition) {
+        return secondPosition / mVideoDurationMs * getWidth();
     }
 }
