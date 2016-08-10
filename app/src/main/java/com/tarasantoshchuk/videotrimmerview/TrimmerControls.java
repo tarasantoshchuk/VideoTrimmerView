@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.media.MediaMetadataRetriever;
 import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
@@ -49,7 +48,6 @@ public class TrimmerControls extends LinearLayout {
     private Listener mListener;
 
     GestureDetector mDetector;
-    MediaMetadataRetriever mMetadataRetriever = new MediaMetadataRetriever();
     private GestureTarget mGestureTarget;
 
     private long mAnimationStartTime;
@@ -377,13 +375,13 @@ public class TrimmerControls extends LinearLayout {
         boolean result =  mDetector.onTouchEvent(event);
 
         if(event.getAction() == MotionEvent.ACTION_UP) {
-            onUp(event);
+            onUp();
         }
 
         return result;
     }
 
-    private void onUp(MotionEvent event) {
+    private void onUp() {
         if (mIsInLongPressMode) {
             revertLongPressAnimation();
         }

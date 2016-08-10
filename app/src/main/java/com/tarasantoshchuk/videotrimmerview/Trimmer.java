@@ -6,7 +6,6 @@ import android.media.MediaMetadataRetriever;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
 
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -113,8 +112,6 @@ public class Trimmer extends FrameLayout implements TrimmerControls.Callback, Pl
 
     @Override
     public void onLongClick(float pivotX) {
-        float pivotSecond = pixelToSecondPosition(pivotX);
-
         mZoomableLayout.animateViews(pivotX);
     }
 
