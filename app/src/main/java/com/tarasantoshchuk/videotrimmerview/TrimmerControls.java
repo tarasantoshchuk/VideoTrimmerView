@@ -232,7 +232,7 @@ public class TrimmerControls extends LinearLayout {
     }
 
     private void moveRightControl(float distanceX) {
-        mRightRectPosition = limit(mLeftRectPosition + minTrimWidth(), mMaxRightRectPosition, Math.min(mLeftRectPosition + maxTrimWidth(), mRightRectPosition - distanceX));
+        mRightRectPosition = limit(Math.max(mLeftRectPosition + minTrimWidth(), mMinLeftRectPosition), Math.min(mLeftRectPosition + maxTrimWidth(), mMaxRightRectPosition), mRightRectPosition - distanceX);
     }
 
     private float maxTrimWidth() {
@@ -256,7 +256,7 @@ public class TrimmerControls extends LinearLayout {
     }
 
     private void moveLeftControl(float distanceX) {
-        mLeftRectPosition = limit(Math.max(mRightRectPosition - maxTrimWidth(), mMinLeftRectPosition), mRightRectPosition - minTrimWidth(), mLeftRectPosition - distanceX);
+        mLeftRectPosition = limit(Math.max(mRightRectPosition - maxTrimWidth(), mMinLeftRectPosition), Math.min(mMaxRightRectPosition, mRightRectPosition - minTrimWidth()), mLeftRectPosition - distanceX);
     }
 
     private enum GestureTarget {

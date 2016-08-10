@@ -54,7 +54,7 @@ public class Trimmer extends FrameLayout implements TrimmerControls.Callback, Pl
         mTrimmerControls = (TrimmerControls) findViewById(R.id.controls);
         mTrimmerControls.setCallback(this);
         mTrimmerControls.setTrimListener(this);
-        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
+        mMetadataRetriever.setDataSource("/storage/emulated/0/video.avi");
 
         float videoHeight = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
         float videoWidth = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
@@ -105,9 +105,6 @@ public class Trimmer extends FrameLayout implements TrimmerControls.Callback, Pl
     @Override
     public void onTrimPositionChanged(float left, float right) {
         mListener.onTrimChanged(left / getWidth() * mVideoDurationMs, right / getWidth() * mVideoDurationMs);
-
-        //todo: remove
-        //mTrimmerControls.updateVideoPositionIndicator((left + right) / 2f);
     }
 
     @Override
