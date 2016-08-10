@@ -7,7 +7,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.util.AttributeSet;
 import android.view.View;
-import android.widget.FrameLayout;
+import android.view.ViewGroup;
 import android.widget.ImageView;
 
 import java.util.ArrayList;
@@ -15,10 +15,11 @@ import java.util.ArrayList;
 import rx.Observable;
 import rx.Subscriber;
 
-public class ZoomableLayout extends FrameLayout {
+public class ZoomableLayout extends ViewGroup {
     public static final int MAIN_FRAMES_COUNT = 5;
-    public static final int EXPANSION_FACTOR = 4;
-    private ArrayList<Animator> mLastAnimatorsSet;
+    public static final int EXPANSION_FACTOR = 3;
+    private int mPreviousZoomPivotMainFrame;
+    private float mPreviousZoomPivotX;
 
     public ZoomableLayout(Context context) {
         this(context, null);
@@ -47,7 +48,13 @@ public class ZoomableLayout extends FrameLayout {
 
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-        super.onLayout(changed, left, top, right, bottom);
+        if (changed) {
+            for(int i = 0; i < getChildCount(); i++) {
+                getChildAt(i).layout(0, getTop(), 0, getBottom());
+            }
+        }
+
+
         positionMainFrames();
         positionAdditionalFrames();
     }
@@ -68,13 +75,11 @@ public class ZoomableLayout extends FrameLayout {
             ImageView view = getChildAt(frameIndex);
 
             int mainFrameRightSide = width / MAIN_FRAMES_COUNT * (previousMainFrameIndex + 1);
-            int mainFrameLeftSide = width / MAIN_FRAMES_COUNT * (previousMainFrameIndex);
 
             view.setLeft(0);
             view.setRight(width / MAIN_FRAMES_COUNT);
             view.setScaleX(0);
             view.setTranslationX(mainFrameRightSide - width/MAIN_FRAMES_COUNT / 2);
-            getBitmapAt(mainFrameLeftSide, view);
         }
     }
 
@@ -86,19 +91,21 @@ public class ZoomableLayout extends FrameLayout {
         int mainFrameIndex = 0;
         for(int frameIndex = 0; frameIndex < childCount; frameIndex += EXPANSION_FACTOR) {
             ImageView view = getChildAt(frameIndex);
+
             int leftSide = width / MAIN_FRAMES_COUNT * mainFrameIndex;
+
+            setMainFrameSpanBitmap(leftSide, mainFrameIndex);
 
             view.setLeft(0);
             view.setRight(width / MAIN_FRAMES_COUNT);
             view.setTranslationX(leftSide);
-            getBitmapAt(leftSide, view);
 
             mainFrameIndex++;
         }
     }
 
-    private void getBitmapAt(int leftSide, final ImageView view) {
-        mCallback.getBitmapAt(leftSide).subscribe(new Subscriber<Bitmap>() {
+    private void setSingleFrameBitmap(int leftSide, final ImageView view) {
+        mCallback.getBitmapAt(leftSide, -1).subscribe(new Subscriber<Bitmap>() {
             @Override
             public void onCompleted() {
 
@@ -116,40 +123,51 @@ public class ZoomableLayout extends FrameLayout {
         });
     }
 
-    public void revertAnimation() {
-        if (mLastAnimatorsSet != null) {
-            for (Animator animator: mLastAnimatorsSet) {
-                ((ObjectAnimator) animator).reverse();
+    private void setMainFrameSpanBitmap(int leftSide, final int mainFrameIndex) {
+        mCallback.getBitmapAt(leftSide, mainFrameIndex).subscribe(new Subscriber<Bitmap>() {
+            @Override
+            public void onCompleted() {
+
             }
 
-            AnimatorSet animatorSet = new AnimatorSet();
-            animatorSet.playTogether(mLastAnimatorsSet);
-            animatorSet.start();
+            @Override
+            public void onError(Throwable e) {
 
-            mLastAnimatorsSet = null;
-        }
+            }
+
+            @Override
+            public void onNext(Bitmap bitmap) {
+                int mainFrameCommonIndex = mainFrameIndex * EXPANSION_FACTOR;
+
+                for (int offset = 0; offset < EXPANSION_FACTOR; offset++) {
+                    getChildAt(mainFrameCommonIndex + offset).setImageBitmap(bitmap);
+                }
+            }
+        });
     }
 
-    public void animateViews() {
+    public void revertAnimation() {
         AnimatorSet animatorSet = new AnimatorSet();
 
         int mainFrameIndex = 0;
         int childCount = getChildCount();
         int width = getWidth();
+        float viewWidth = width / MAIN_FRAMES_COUNT;
 
-        mLastAnimatorsSet = new ArrayList<>();
+        ArrayList<Animator> animatorsList = new ArrayList<>();
 
+        //trace main frames
         for(int frameIndex = 0; frameIndex < childCount; frameIndex += EXPANSION_FACTOR) {
             ImageView view = getChildAt(frameIndex);
 
-            int leftSide = width / MAIN_FRAMES_COUNT * mainFrameIndex;
-
             ObjectAnimator translationAnimator = new ObjectAnimator();
             translationAnimator.setTarget(view);
+            translationAnimator.getDuration();
             translationAnimator.setProperty(View.TRANSLATION_X);
-            translationAnimator.setFloatValues(leftSide + view.getWidth() * (EXPANSION_FACTOR - 1) * mainFrameIndex);
+            float mainFrameLeft = mainFrameIndex * viewWidth;
+            translationAnimator.setFloatValues(mainFrameLeft);
 
-            mLastAnimatorsSet.add(translationAnimator);
+            animatorsList.add(translationAnimator);
 
             mainFrameIndex++;
         }
@@ -166,7 +184,103 @@ public class ZoomableLayout extends FrameLayout {
 
             ImageView view = getChildAt(frameIndex);
 
-            int leftSide = width / MAIN_FRAMES_COUNT * (previousMainFrameIndex + (EXPANSION_FACTOR - 1) * previousMainFrameIndex + frameIndex % EXPANSION_FACTOR);
+            float mainFrameLeft = previousMainFrameIndex * viewWidth;
+
+            float leftSide = mainFrameLeft + viewWidth / 2f;
+
+            ObjectAnimator translationAnimator = new ObjectAnimator();
+            translationAnimator.setTarget(view);
+            translationAnimator.setProperty(View.TRANSLATION_X);
+            translationAnimator.setFloatValues(leftSide);
+
+            ObjectAnimator scaleAnimator = new ObjectAnimator();
+            scaleAnimator.setTarget(view);
+            scaleAnimator.setProperty(View.SCALE_X);
+            scaleAnimator.setFloatValues(0f);
+
+            animatorsList.add(scaleAnimator);
+            animatorsList.add(translationAnimator);
+
+        }
+
+        animatorSet.playTogether(animatorsList);
+        animatorSet.addListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                onAnimationZoomOutEnd();
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animation) {
+
+            }
+        });
+        animatorSet.start();
+    }
+
+    public void animateViews(float pivotX) {
+        AnimatorSet animatorSet = new AnimatorSet();
+
+        int mainFrameIndex = 0;
+        int childCount = getChildCount();
+        int width = getWidth();
+        float viewWidth = width / MAIN_FRAMES_COUNT;
+
+        ArrayList<Animator> animatorsList = new ArrayList<>();
+
+        int pivotMainFrameIndex = (int) Math.floor(pivotX / viewWidth);
+
+        if (pivotMainFrameIndex >= MAIN_FRAMES_COUNT) {
+            pivotMainFrameIndex = MAIN_FRAMES_COUNT - 1;
+        } else if (pivotMainFrameIndex < 0) {
+            pivotMainFrameIndex = 0;
+        }
+
+        float pivotMainFrameLeft = pivotMainFrameIndex * viewWidth;
+
+        mPreviousZoomPivotMainFrame = pivotMainFrameIndex;
+        mPreviousZoomPivotX = pivotX;
+
+        //trace main frames
+        for(int frameIndex = 0; frameIndex < childCount; frameIndex += EXPANSION_FACTOR) {
+            ImageView view = getChildAt(frameIndex);
+
+            ObjectAnimator translationAnimator = new ObjectAnimator();
+            translationAnimator.setTarget(view);
+            translationAnimator.setProperty(View.TRANSLATION_X);
+            float mainFrameLeft = pivotMainFrameLeft + view.getWidth() * EXPANSION_FACTOR * (mainFrameIndex - pivotMainFrameIndex);
+            translationAnimator.setFloatValues(mainFrameLeft);
+
+            animatorsList.add(translationAnimator);
+
+            mainFrameIndex++;
+        }
+
+
+        //trace additional frames
+        for(int frameIndex = 0; frameIndex < childCount; frameIndex++) {
+            if (frameIndex % EXPANSION_FACTOR == 0) {
+                //skip main frames
+                continue;
+            }
+
+            int previousMainFrameIndex = (frameIndex - frameIndex % EXPANSION_FACTOR) / EXPANSION_FACTOR;
+
+            ImageView view = getChildAt(frameIndex);
+
+            float mainFrameLeft = pivotMainFrameLeft + view.getWidth() * EXPANSION_FACTOR * (previousMainFrameIndex - pivotMainFrameIndex);
+
+            float leftSide = mainFrameLeft + (frameIndex - previousMainFrameIndex * EXPANSION_FACTOR) * viewWidth;
 
             ObjectAnimator translationAnimator = new ObjectAnimator();
             translationAnimator.setTarget(view);
@@ -178,13 +292,60 @@ public class ZoomableLayout extends FrameLayout {
             scaleAnimator.setProperty(View.SCALE_X);
             scaleAnimator.setFloatValues(1f);
 
-            mLastAnimatorsSet.add(scaleAnimator);
-            mLastAnimatorsSet.add(translationAnimator);
+            animatorsList.add(scaleAnimator);
+            animatorsList.add(translationAnimator);
 
         }
 
-        animatorSet.playTogether(mLastAnimatorsSet);
+        animatorSet.playTogether(animatorsList);
+        animatorSet.addListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                onAnimationZoomInEnd();
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animation) {
+
+            }
+        });
         animatorSet.start();
+    }
+
+    private void onAnimationZoomInEnd() {
+        int zoomPivotFrameIndex = mPreviousZoomPivotMainFrame * EXPANSION_FACTOR;
+
+        int firstFrameOnScreen = zoomPivotFrameIndex - mPreviousZoomPivotMainFrame;
+        int lastFrameOnScreen = firstFrameOnScreen + MAIN_FRAMES_COUNT;
+
+        for (int i = firstFrameOnScreen; i < lastFrameOnScreen; i++) {
+            ImageView view = getChildAt(i);
+            setSingleFrameBitmap((int) (mPreviousZoomPivotX + (view.getX() - mPreviousZoomPivotX) / EXPANSION_FACTOR), view);
+        }
+    }
+
+    private void onAnimationZoomOutEnd() {
+        int zoomPivotFrameIndex = mPreviousZoomPivotMainFrame * EXPANSION_FACTOR;
+
+        int firstFrameOnScreen = zoomPivotFrameIndex - mPreviousZoomPivotMainFrame;
+        int lastFrameOnScreen = firstFrameOnScreen + MAIN_FRAMES_COUNT;
+
+        for (int i = firstFrameOnScreen; i < lastFrameOnScreen; i++) {
+            ImageView view = getChildAt(i);
+            int mainFrameCommonIndex = (i - i % EXPANSION_FACTOR);
+            ImageView mainFrame = getChildAt(mainFrameCommonIndex);
+            setSingleFrameBitmap((int) mainFrame.getX(), view);
+        }
     }
 
     @Override
@@ -193,6 +354,6 @@ public class ZoomableLayout extends FrameLayout {
     }
 
     public interface Callback {
-        Observable<Bitmap> getBitmapAt(float pixelPosition);
+        Observable<Bitmap> getBitmapAt(float pixelPosition, int mainFramePosition);
     }
 }

@@ -18,6 +18,15 @@ public class TrimmerControls extends LinearLayout {
     private static final int CIRCLE_RADIUS_DP = 15;
     private static final int BORDER_WIDTH_DP = 5;
 
+    private static final int ANIMATION_DURATION_MS = 300_000_000;
+    private static final int LONG_PRESS_EXPANSION = 3;
+    private final Runnable mInvalidateRunnable = new Runnable() {
+        @Override
+        public void run() {
+            invalidate();
+        }
+    };
+
     private float mLeftRectPosition;
     private float mRightRectPosition;
 
@@ -26,8 +35,6 @@ public class TrimmerControls extends LinearLayout {
 
     private float mMinLeftRectPosition;
     private float mMaxRightRectPosition;
-    private float mMinRectWidth;
-    private float mMaxRectWidth;
 
     private float mCircleRadius;
     private float mBorderWidth;
@@ -44,6 +51,16 @@ public class TrimmerControls extends LinearLayout {
     GestureDetector mDetector;
     MediaMetadataRetriever mMetadataRetriever = new MediaMetadataRetriever();
     private GestureTarget mGestureTarget;
+
+    private long mAnimationStartTime;
+    private float mAnimationStartLeft;
+    private float mAnimationStartRight;
+    private float mAnimationEndLeft;
+    private float mAnimationEndRight;
+
+    private boolean mIsAnimating;
+    private boolean mIsInLongPressMode;
+    private float mLongPressModePivotX;
 
     public TrimmerControls(Context context) {
         this(context, null);
@@ -115,7 +132,7 @@ public class TrimmerControls extends LinearLayout {
                         return false;
                 }
 
-                mListener.onTrimPositionChanged(mLeftRectPosition, mRightRectPosition);
+                notifyTrimPositionChanged();
 
                 invalidate();
                 return true;
@@ -123,20 +140,23 @@ public class TrimmerControls extends LinearLayout {
 
             @Override
             public void onLongPress(MotionEvent e) {
+                float pivotPoint;
+
                 switch (mGestureTarget) {
                     case LEFT_CONTROL:
-                        TrimmerControls.this.onLongPress(mLeftRectPosition);
+                        pivotPoint = mLeftRectPosition;
                         break;
                     case RIGHT_CONTROL:
-                        TrimmerControls.this.onLongPress(mRightRectPosition);
+                        pivotPoint = mRightRectPosition;
                         break;
                     case FRAME:
                     case NONE:
                     default:
-                        break;
+                        return;
                 }
 
-                invalidate();
+                startLongPressAnimation(pivotPoint);
+                TrimmerControls.this.onLongPress(pivotPoint);
             }
 
             @Override
@@ -146,18 +166,88 @@ public class TrimmerControls extends LinearLayout {
         });
     }
 
+    private void notifyTrimPositionChanged() {
+        float leftPosition;
+        float rightPosition;
+
+        if (mIsInLongPressMode) {
+            leftPosition = mLongPressModePivotX + (mLeftRectPosition - mLongPressModePivotX) / (float) LONG_PRESS_EXPANSION;
+            rightPosition = mLongPressModePivotX + (mRightRectPosition - mLongPressModePivotX) / (float) LONG_PRESS_EXPANSION;
+        } else {
+            leftPosition = mLeftRectPosition;
+            rightPosition = mRightRectPosition;
+        }
+
+
+
+        mListener.onTrimPositionChanged(leftPosition, rightPosition);
+    }
+
+
+
+    private void startLongPressAnimation(float pivotPoint) {
+        mAnimationStartTime = System.nanoTime();
+
+        if (!mIsAnimating) {
+            mAnimationEndLeft = mLeftRectPosition + (mLeftRectPosition - pivotPoint) * (LONG_PRESS_EXPANSION - 1);
+            mAnimationEndRight = mRightRectPosition + (mRightRectPosition - pivotPoint) * (LONG_PRESS_EXPANSION - 1);
+        } else {
+            mAnimationEndLeft = mAnimationStartLeft;
+            mAnimationEndRight = mAnimationStartRight;
+        }
+
+        mAnimationStartLeft = mLeftRectPosition;
+        mAnimationStartRight = mRightRectPosition;
+
+        mIsAnimating = true;
+        mIsInLongPressMode = true;
+        mLongPressModePivotX = pivotPoint;
+
+        invalidate();
+    }
+
+    private void revertLongPressAnimation() {
+        removeCallbacks(mInvalidateRunnable);
+
+        mAnimationStartTime = System.nanoTime();
+
+        if (mIsAnimating) {
+            mAnimationEndLeft = mAnimationStartLeft;
+            mAnimationEndRight = mAnimationStartRight;
+        } else {
+            mAnimationEndLeft = mLongPressModePivotX + (mLeftRectPosition - mLongPressModePivotX) / (float) LONG_PRESS_EXPANSION;
+            mAnimationEndRight = mLongPressModePivotX + (mRightRectPosition - mLongPressModePivotX) / (float) LONG_PRESS_EXPANSION;
+        }
+
+        mAnimationStartLeft = mLeftRectPosition;
+        mAnimationStartRight = mRightRectPosition;
+
+        mIsAnimating = true;
+        mIsInLongPressMode = false;
+
+        invalidate();
+    }
+
     private void onLongPress(float pivotX) {
         mListener.onLongClick(pivotX);
         Toast.makeText(getContext(), "long click at position " + pivotX, Toast.LENGTH_SHORT).show();
     }
 
     private void moveRightControl(float distanceX) {
-        mRightRectPosition = limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, Math.min(mLeftRectPosition + mMaxRectWidth, mRightRectPosition - distanceX));
+        mRightRectPosition = limit(mLeftRectPosition + minTrimWidth(), mMaxRightRectPosition, Math.min(mLeftRectPosition + maxTrimWidth(), mRightRectPosition - distanceX));
+    }
+
+    private float maxTrimWidth() {
+        return (mIsInLongPressMode ? LONG_PRESS_EXPANSION : 1) * mCallback.maxTrimWidth();
+    }
+
+    private float minTrimWidth() {
+        return (mIsInLongPressMode ? LONG_PRESS_EXPANSION : 1) * mCallback.minTrimWidth();
     }
 
     private void moveFrame(float distanceX) {
-        float newLeftPosition = limit(mMinLeftRectPosition, mRightRectPosition - mMinRectWidth, mLeftRectPosition - distanceX);
-        float newRightPosition = limit(mLeftRectPosition + mMinRectWidth, mMaxRightRectPosition, mRightRectPosition - distanceX);
+        float newLeftPosition = limit(mMinLeftRectPosition, mRightRectPosition - minTrimWidth(), mLeftRectPosition - distanceX);
+        float newRightPosition = limit(mLeftRectPosition + minTrimWidth(), mMaxRightRectPosition, mRightRectPosition - distanceX);
 
         int dxSign = distanceX > 0 ? 1 : -1;
 
@@ -168,7 +258,7 @@ public class TrimmerControls extends LinearLayout {
     }
 
     private void moveLeftControl(float distanceX) {
-        mLeftRectPosition = limit(Math.max(mRightRectPosition - mMaxRectWidth, mMinLeftRectPosition), mRightRectPosition - mMinRectWidth, mLeftRectPosition - distanceX);
+        mLeftRectPosition = limit(Math.max(mRightRectPosition - maxTrimWidth(), mMinLeftRectPosition), mRightRectPosition - minTrimWidth(), mLeftRectPosition - distanceX);
     }
 
     private enum GestureTarget {
@@ -176,11 +266,6 @@ public class TrimmerControls extends LinearLayout {
         RIGHT_CONTROL,
         FRAME,
         NONE
-    }
-
-    private GestureTarget setAndReturnGestureTarget(float x, float y) {
-        mGestureTarget = getGestureTarget(x, y);
-        return mGestureTarget;
     }
 
     @NonNull
@@ -224,6 +309,10 @@ public class TrimmerControls extends LinearLayout {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+
+        handleAnimations();
+
+
         mBorderRectangle.set(getCurrentLeft(), getTop(), getCurrentRight(), getBottom());
         canvas.drawRect(mBorderRectangle, mFramePaint);
         canvas.drawCircle(getLeftCircleX(), getCircleY(), mCircleRadius, mControllersPaint);
@@ -231,6 +320,29 @@ public class TrimmerControls extends LinearLayout {
 
         if (mIsVideoPositionShown) {
             canvas.drawLine(mCurrentVideoPosition, 0, mCurrentVideoPosition, getBottom(), mCurrentPositionPaint);
+        }
+    }
+
+    private void handleAnimations() {
+        if (mIsAnimating) {
+            long currentAnimationTime = System.nanoTime() - mAnimationStartTime;
+
+
+            if (currentAnimationTime < ANIMATION_DURATION_MS) {
+                mLeftRectPosition = mAnimationStartLeft + (mAnimationEndLeft - mAnimationStartLeft) * (currentAnimationTime / (float) ANIMATION_DURATION_MS);
+                mRightRectPosition = mAnimationStartRight + (mAnimationEndRight - mAnimationStartRight) * (currentAnimationTime / (float) ANIMATION_DURATION_MS);
+            } else {
+                mLeftRectPosition = mAnimationEndLeft;
+                mRightRectPosition = mAnimationEndRight;
+
+                mIsAnimating = false;
+
+                notifyTrimPositionChanged();
+            }
+
+            if (mIsAnimating) {
+                postDelayed(mInvalidateRunnable, 8);
+            }
         }
     }
 
@@ -272,6 +384,10 @@ public class TrimmerControls extends LinearLayout {
     }
 
     private void onUp(MotionEvent event) {
+        if (mIsInLongPressMode) {
+            revertLongPressAnimation();
+        }
+
         mListener.onLongClickRelease();
         mGestureTarget = null;
     }
@@ -281,9 +397,7 @@ public class TrimmerControls extends LinearLayout {
         super.onLayout(changed, left, top, right, bottom);
         mMaxRightRectPosition = getRight() - mMinLeftRectPosition;
         mLeftRectPosition = mMinLeftRectPosition;
-        mRightRectPosition = Math.min(mLeftRectPosition + mMaxRectWidth, mMaxRightRectPosition);
-        mMinRectWidth = mCallback.minTrimWidth();
-        mMaxRectWidth = mCallback.maxTrimWidth();
+        mRightRectPosition = Math.min(mLeftRectPosition + maxTrimWidth(), mMaxRightRectPosition);
     }
 
     private static float limit(float min, float max, float value) {

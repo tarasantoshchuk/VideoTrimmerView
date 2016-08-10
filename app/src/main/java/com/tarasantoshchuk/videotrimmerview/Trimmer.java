@@ -4,19 +4,25 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.media.MediaMetadataRetriever;
 import android.util.AttributeSet;
+import android.util.Log;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+
+import java.lang.ref.WeakReference;
+import java.util.HashMap;
 
 import rx.Observable;
 import rx.Subscriber;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.schedulers.Schedulers;
 
-public class Trimmer extends LinearLayout implements TrimmerControls.Callback, PlayerListener, TrimmerControls.Listener, ZoomableLayout.Callback {
+public class Trimmer extends FrameLayout implements TrimmerControls.Callback, PlayerListener, TrimmerControls.Listener, ZoomableLayout.Callback {
     private static final int FRAMES_COUNT = 5;
-    private static final int LONG_CLICK_EXPANTION = 3;
 
     private static final int MIN_TRIMMED_LENGTH_MS = 1000;
     private static final int MAX_TRIMMED_LENGTH_MS = 15000;
+
+    private final HashMap<Integer, WeakReference<Bitmap>> mBitmapCache = new HashMap<>();
 
     private MediaMetadataRetriever mMetadataRetriever = new MediaMetadataRetriever();
 
@@ -49,7 +55,7 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
         mTrimmerControls = (TrimmerControls) findViewById(R.id.controls);
         mTrimmerControls.setCallback(this);
         mTrimmerControls.setTrimListener(this);
-        mMetadataRetriever.setDataSource("/storage/emulated/0/video.avi");
+        mMetadataRetriever.setDataSource("/storage/emulated/0/video.mp4");
 
         float videoHeight = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
         float videoWidth = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
@@ -102,17 +108,14 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
         mListener.onTrimChanged(left / getWidth() * mVideoDurationMs, right / getWidth() * mVideoDurationMs);
 
         //todo: remove
-        mTrimmerControls.updateVideoPositionIndicator((left + right) / 2f);
+        //mTrimmerControls.updateVideoPositionIndicator((left + right) / 2f);
     }
 
     @Override
     public void onLongClick(float pivotX) {
         float pivotSecond = pixelToSecondPosition(pivotX);
 
-        float zoomedStartPosition = pivotSecond - pivotSecond / LONG_CLICK_EXPANTION;
-        float zoomedEndPosition = pivotSecond + (mVideoDurationMs - pivotSecond) / LONG_CLICK_EXPANTION;
-
-        mZoomableLayout.animateViews();
+        mZoomableLayout.animateViews(pivotX);
     }
 
     @Override
@@ -121,19 +124,43 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
     }
 
     @Override
-    public Observable<Bitmap> getBitmapAt(final float pixelPosition) {
-        return new BitmapObservable(pixelPosition)
+    public Observable<Bitmap> getBitmapAt(final float pixelPosition, int mainFrameIndex) {
+        return new BitmapObservable(pixelPosition, mainFrameIndex)
                 .subscribeOn(Schedulers.newThread())
                 .observeOn(AndroidSchedulers.mainThread());
     }
 
     private class BitmapObservable extends Observable<Bitmap> {
-        public BitmapObservable(final float pixelPosition) {
+        public BitmapObservable(final float pixelPosition, final int mainFrameIndex) {
             super(new Observable.OnSubscribe<Bitmap>() {
                 @Override
                 public void call(Subscriber<? super Bitmap> subscriber) {
-                    Bitmap result = mMetadataRetriever.getFrameAtTime((long) (1000 * pixelToSecondPosition(pixelPosition)));
-                    subscriber.onNext(result);
+                    Log.d("DEBUG", "pixel position " + pixelPosition + ", mainFrameIndex " + mainFrameIndex);
+                    boolean isMainFrame = mainFrameIndex != -1;
+
+                    if (isMainFrame) {
+                        WeakReference<Bitmap> bitmapRef = mBitmapCache.get(mainFrameIndex);
+
+                        if (bitmapRef != null && bitmapRef.get() != null) {
+                            returnBitmap(subscriber, mBitmapCache.get(mainFrameIndex));
+                            return;
+                        }
+                    }
+
+                    Bitmap raw = mMetadataRetriever.getFrameAtTime((long) (1000 * pixelToSecondPosition(pixelPosition)), MediaMetadataRetriever.OPTION_CLOSEST);
+                    Bitmap scaled = Bitmap.createScaledBitmap(raw, getWidth() / FRAMES_COUNT, getHeight(), false);
+
+                    WeakReference<Bitmap> bitmapRef = new WeakReference<>(scaled);
+
+                    if (isMainFrame) {
+                        mBitmapCache.put(mainFrameIndex, bitmapRef);
+                    }
+
+                    returnBitmap(subscriber, bitmapRef);
+                }
+
+                private void returnBitmap(Subscriber<? super Bitmap> subscriber, WeakReference<Bitmap> bitmapWeakReference) {
+                    subscriber.onNext(bitmapWeakReference.get());
                     subscriber.onCompleted();
                 }
             });
@@ -145,7 +172,7 @@ public class Trimmer extends LinearLayout implements TrimmerControls.Callback, P
     }
 
     private float pixelToSecondPosition(float pixelPosition) {
-        return pixelPosition / getWidth() * mVideoDurationMs;
+        return pixelPosition / (float)getWidth() * mVideoDurationMs;
     }
 
     private float secondToPixelPosition(float secondPosition) {
