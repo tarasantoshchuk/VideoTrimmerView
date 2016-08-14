@@ -8,7 +8,6 @@ import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.widget.LinearLayout;
 import android.widget.Toast;
@@ -47,7 +46,7 @@ public class TrimmerControls extends LinearLayout {
     private Callback mCallback;
     private Listener mListener;
 
-    GestureDetector mDetector;
+    DragGestureDetector mDetector;
     private GestureTarget mGestureTarget;
 
     private long mAnimationStartTime;
@@ -97,7 +96,7 @@ public class TrimmerControls extends LinearLayout {
     }
 
     private void initGestureDetector(Context context) {
-        mDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+        mDetector = new DragGestureDetector(context, new DragGestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onDown(MotionEvent e) {
                 mGestureTarget = getGestureTarget(e.getX(), e.getY());
@@ -105,16 +104,12 @@ public class TrimmerControls extends LinearLayout {
             }
 
             @Override
-            public void onShowPress(MotionEvent e) {
+            public void onUp() {
+                TrimmerControls.this.onUp();
             }
 
             @Override
-            public boolean onSingleTapUp(MotionEvent e) {
-                return false;
-            }
-
-            @Override
-            public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY, boolean isDrag) {
                 switch(mGestureTarget) {
                     case LEFT_CONTROL:
                         moveLeftControl(distanceX);
@@ -138,30 +133,29 @@ public class TrimmerControls extends LinearLayout {
 
             @Override
             public void onLongPress(MotionEvent e) {
-                float pivotPoint;
-
-                switch (mGestureTarget) {
-                    case LEFT_CONTROL:
-                        pivotPoint = mLeftRectPosition;
-                        break;
-                    case RIGHT_CONTROL:
-                        pivotPoint = mRightRectPosition;
-                        break;
-                    case FRAME:
-                    case NONE:
-                    default:
-                        return;
-                }
-
-                startLongPressAnimation(pivotPoint);
-                TrimmerControls.this.onLongPress(pivotPoint);
-            }
-
-            @Override
-            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                return false;
+                TrimmerControls.this.onLongPress();
             }
         });
+    }
+
+    private void onLongPress() {
+        float pivotPoint;
+
+        switch (mGestureTarget) {
+            case LEFT_CONTROL:
+                pivotPoint = mLeftRectPosition;
+                break;
+            case RIGHT_CONTROL:
+                pivotPoint = mRightRectPosition;
+                break;
+            case FRAME:
+            case NONE:
+            default:
+                return;
+        }
+
+        startLongPressAnimation(pivotPoint);
+        TrimmerControls.this.onLongPress(pivotPoint);
     }
 
     private void notifyTrimPositionChanged() {
@@ -372,13 +366,7 @@ public class TrimmerControls extends LinearLayout {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         super.onTouchEvent(event);
-        boolean result =  mDetector.onTouchEvent(event);
-
-        if(event.getAction() == MotionEvent.ACTION_UP) {
-            onUp();
-        }
-
-        return result;
+        return mDetector.onTouchEvent(event);
     }
 
     private void onUp() {
