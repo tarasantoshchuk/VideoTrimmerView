@@ -54,7 +54,7 @@ public class Trimmer extends FrameLayout implements TrimmerControls.Callback, Pl
         mTrimmerControls = (TrimmerControls) findViewById(R.id.controls);
         mTrimmerControls.setCallback(this);
         mTrimmerControls.setTrimListener(this);
-        mMetadataRetriever.setDataSource("/storage/emulated/0/video.avi");
+        mMetadataRetriever.setDataSource("/storage/emulated/0/video2.mp4");
 
         float videoHeight = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
         float videoWidth = Float.parseFloat(mMetadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
@@ -120,7 +120,7 @@ public class Trimmer extends FrameLayout implements TrimmerControls.Callback, Pl
     @Override
     public Observable<Bitmap> getBitmapAt(final float pixelPosition, int mainFrameIndex) {
         return new BitmapObservable(pixelPosition, mainFrameIndex)
-                .subscribeOn(Schedulers.newThread())
+                .subscribeOn(Schedulers.computation())
                 .observeOn(AndroidSchedulers.mainThread());
     }
 

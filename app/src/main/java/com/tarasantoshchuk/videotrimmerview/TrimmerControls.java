@@ -372,9 +372,9 @@ public class TrimmerControls extends LinearLayout {
     private void onUp() {
         if (mIsInLongPressMode) {
             revertLongPressAnimation();
+            mListener.onLongClickRelease();
         }
 
-        mListener.onLongClickRelease();
         mGestureTarget = null;
     }
 
